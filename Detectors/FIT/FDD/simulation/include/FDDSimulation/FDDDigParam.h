@@ -25,7 +25,11 @@ struct FDDDigParam : o2::conf::ConfigurableParamHelper<FDDDigParam> {
   float hitTimeOffsetA = 0; ///< Hit time offset on the A side [ns]
   float hitTimeOffsetC = 0; ///< Hit time offset on the C side [ns]
 
-  float pmGain = 1e6; ///< PM gain
+  float pmGainA = 1e6; ///< PM gain
+  float pmGainC = 1e6; ///< PM gain
+  float GainSmearingSigma = 0.f; // Log-normal PMT gain smearing per hit
+  float TimeOffsetCFD = 0.f; // CFD time offset in TDC units
+  float TimeSmearingSigma = 0.f;   // ns
 
   O2ParamDef(FDDDigParam, "FDDDigParam");
 };

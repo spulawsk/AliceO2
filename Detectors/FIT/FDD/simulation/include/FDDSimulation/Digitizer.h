@@ -40,7 +40,8 @@ class Digitizer
   typedef math_utils::RandomRing</*float_v::size()*/ 4 * DigitizationParameters::PheRRSize> HitRandomRingType;
   typedef math_utils::RandomRing</*float_v::size()*/ 4 * DigitizationParameters::HitRRSize> PheRandomRingType;
 
-  using ChannelBCDataF = std::array<float, NTimeBinsPerBC>;
+  static constexpr int NTimeBinsPerBCDigitizer = 1920;
+  using ChannelBCDataF = std::array<float, NTimeBinsPerBCDigitizer>;
 
  public:
   struct BCCache : public o2::InteractionRecord {
@@ -112,7 +113,7 @@ class Digitizer
   DigitizationParameters parameters;
 
   ChannelBCDataF mTimeCFD;                                                                  // Time series for CFD measurement
-  static constexpr float mBinSize = o2::constants::lhc::LHCBunchSpacingNS / NTimeBinsPerBC; // Time width of the pulse bin - HPTDC resolution
+  static constexpr float mBinSize = o2::constants::lhc::LHCBunchSpacingNS / NTimeBinsPerBCDigitizer; // Time width of the pulse bin - HPTDC resolution
   float mPmtTimeIntegral;
 
   // Random rings
