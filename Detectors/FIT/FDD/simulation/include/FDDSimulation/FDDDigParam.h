@@ -31,6 +31,18 @@ struct FDDDigParam : o2::conf::ConfigurableParamHelper<FDDDigParam> {
   float TimeOffsetCFD = 0.f; // CFD time offset in TDC units
   float TimeSmearingSigma = 0.f;   // ns
 
+  int CFDInADCGate = 192; // Half-width in TDC counts; abs(time) must be strictly smaller
+
+  // Trigger thresholds in ADC counts and TDC counts, matching the software
+  // trigger defaults in AliceO2 PR #16042. All window boundaries are strict.
+  int OrGate = 153;
+  int OrTriggerAmplitudeLowThresholdSideA = 6;
+  int OrTriggerAmplitudeLowThresholdSideC = 0;
+  int OrTriggerAmplitudeHighThresholdSideA = 4095;
+  int OrTriggerAmplitudeHighThresholdSideC = 4095;
+  int VtxTriggerTimeWindow = 100;
+  bool TriggerCoincidenceMode = true;
+
   O2ParamDef(FDDDigParam, "FDDDigParam");
 };
 } // namespace o2::fdd

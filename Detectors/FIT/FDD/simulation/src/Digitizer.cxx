@@ -220,49 +220,87 @@ void Digitizer::storeBC(const BCCache& bc,
   int first = digitsCh.size(), nStored = 0;
   float totalChargeA = 0, totalChargeC = 0;
   int n_hit_A = 0, n_hit_C = 0, total_time_A = 0, total_time_C = 0;
-  bool nChCside = 8;
+  constexpr int nChCside = 8;
+  // FDD logical channel pairs, as used by the software trigger in PR #16042.
+  constexpr int coincidencePairs[Nchannels] = {4, 5, 6, 7, 0, 1, 2, 3, 12, 13, 14, 15, 8, 9, 10, 11};
+  bool triggerChannel[Nchannels] = {};
+  int triggerTime[Nchannels] = {};
+  const auto& param = FDDDigParam::Instance();
   for (int ic = 0; ic < Nchannels; ic++) {
     float chargeADC = integrateCharge(bc.pulse[ic]);
     int cfdTime = int(simulateTimeCFD(bc.pulse[ic]));
 
-if (chargeADC != 0 && cfdTime != -1024) {
-  const auto& param = FDDDigParam::Instance();
+    if (chargeADC != 0 && cfdTime != -1024) {
+      const float jitterNS = param.TimeSmearingSigma > 0.f
+                               ? gRandom->Gaus(0., param.TimeSmearingSigma)
+                               : 0.f;
+      cfdTime += std::lround(param.TimeOffsetCFD + jitterNS * invTimePerTDC);
 
-  const float jitterNS = param.TimeSmearingSigma > 0.f
-                           ? gRandom->Gaus(0., param.TimeSmearingSigma)
-                           : 0.f;
+      if (ic < nChCside) {
+        totalChargeC += chargeADC;
+        total_time_C += cfdTime;
+        n_hit_C++;
+      } else {
+        totalChargeA += chargeADC;
+        total_time_A += cfdTime;
+        n_hit_A++;
+      }
 
-  cfdTime += std::lround(param.TimeOffsetCFD +
-                         jitterNS * invTimePerTDC);
+      uint8_t channelBits = parameters.defaultFEEbits;
+      ChannelData::clearFlag(ChannelData::kIsCFDinADCgate, channelBits);
+      // A nonzero ADC signal and a valid CFD crossing are required above.
+      // Apply the gate to the time after offset and smearing; retain the charge outside it.
+      if (std::abs(cfdTime) < param.CFDInADCGate) {
+        ChannelData::setFlag(ChannelData::kIsCFDinADCgate, channelBits);
+      }
+      if (std::rand() % 2) {
+        ChannelData::setFlag(ChannelData::kNumberADC, channelBits);
+      }
 
-  if (ic < nChCside) {
-    totalChargeC += chargeADC;
-    total_time_C += cfdTime;
-    n_hit_C++;
-  } else {
-    totalChargeA += chargeADC;
-    total_time_A += cfdTime;
-    n_hit_A++;
+      digitsCh.emplace_back(ic, cfdTime, int(chargeADC), channelBits);
+      nStored++;
+      const auto& channel = digitsCh.back();
+      constexpr uint8_t triggerFlagMask = static_cast<uint8_t>(~((1u << ChannelData::kNumberADC) | (1u << ChannelData::kIsEventInTVDC)));
+      constexpr uint8_t triggerFlags = 1u << ChannelData::kIsCFDinADCgate;
+      const int low = ic < nChCside ? param.OrTriggerAmplitudeLowThresholdSideC : param.OrTriggerAmplitudeLowThresholdSideA;
+      const int high = ic < nChCside ? param.OrTriggerAmplitudeHighThresholdSideC : param.OrTriggerAmplitudeHighThresholdSideA;
+      triggerChannel[ic] = (channel.mFEEBits & triggerFlagMask) == triggerFlags &&
+                           std::abs(int(channel.mTime)) < param.OrGate &&
+                           channel.mChargeADC > low && channel.mChargeADC < high;
+      triggerTime[ic] = channel.mTime;
+    }
   }
 
-  uint8_t channelBits = parameters.defaultFEEbits;
-  if (std::rand() % 2) {
-    ChannelData::setFlag(ChannelData::kNumberADC, channelBits);
+  int triggerHitsA = 0, triggerHitsC = 0;
+  int triggerTimeA = 0, triggerTimeC = 0;
+  for (int ic = 0; ic < Nchannels; ++ic) {
+    if (!triggerChannel[ic] || (param.TriggerCoincidenceMode && !triggerChannel[coincidencePairs[ic]])) {
+      continue;
+    }
+    // Each accepted channel contributes once, including both members of a pair.
+    if (ic < nChCside) {
+      triggerHitsC++;
+      triggerTimeC += triggerTime[ic];
+    } else {
+      triggerHitsA++;
+      triggerTimeA += triggerTime[ic];
+    }
   }
-
-  digitsCh.emplace_back(ic, cfdTime, int(chargeADC), channelBits);
-  nStored++;
-}
-}
   // SET TRIGGERS
-  Bool_t is_A, is_C, isVertex, is_Central, is_SemiCentral = 0;
-  is_A = n_hit_A > 0;
-  is_C = n_hit_C > 0;
-  uint32_t amplA = is_A ? totalChargeA * 0.125 : -5000; // sum amplitude A side / 8 (hardware)
-  uint32_t amplC = is_C ? totalChargeC * 0.125 : -5000; // sum amplitude C side / 8 (hardware)
-  int timeA = is_A ? total_time_A / n_hit_A : -5000;    // average time A side
-  int timeC = is_C ? total_time_C / n_hit_C : -5000;    // average time C side
-  isVertex = is_A && is_C;
+  Bool_t is_A, is_C, isVertex;
+  Bool_t is_Central = false, is_SemiCentral = false;
+  is_A = triggerHitsA > 0;
+  is_C = triggerHitsC > 0;
+  uint32_t amplA = n_hit_A > 0 ? totalChargeA * 0.125 : -5000; // sum amplitude A side / 8 (hardware)
+  uint32_t amplC = n_hit_C > 0 ? totalChargeC * 0.125 : -5000; // sum amplitude C side / 8 (hardware)
+  int timeA = n_hit_A > 0 ? total_time_A / n_hit_A : -5000;    // average time A side
+  int timeC = n_hit_C > 0 ? total_time_C / n_hit_C : -5000;    // average time C side
+  isVertex = false;
+  if (is_A && is_C) {
+    const double meanTimeA = double(triggerTimeA) / triggerHitsA;
+    const double meanTimeC = double(triggerTimeC) / triggerHitsC;
+    isVertex = std::abs(meanTimeC - meanTimeA) < param.VtxTriggerTimeWindow;
+  }
 
   bool isLaser = false;
   bool isOutputsAreBlocked = false;
