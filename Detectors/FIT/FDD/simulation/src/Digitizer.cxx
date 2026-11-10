@@ -76,7 +76,7 @@ void Digitizer::process(const std::vector<o2::fdd::Hit>& hits,
 
     // Subtract time-of-flight from hit time
     const float timeOfFlight = hit.GetPos().R() / o2::constants::physics::LightSpeedCm2NS;
-    const float timeOffset = iChannel < 8 ? FDDDigParam::Instance().hitTimeOffsetC : FDDDigParam::Instance().hitTimeOffsetA;
+    const float timeOffset = iChannel < NChPerMod ? FDDDigParam::Instance().hitTimeOffsetC : FDDDigParam::Instance().hitTimeOffsetA;
 
     timeHit += -timeOfFlight + timeOffset;
     timeHit += mIntRecord.getTimeNS();
@@ -105,14 +105,14 @@ void Digitizer::createPulse(int nPhE, int parID, double timeHit, std::array<o2::
 
   double time0 = cachedIR[0].bc2ns(); // start time of the 1st cashed BC
   float timeDiff = time0 - timeHit;
-  if (channel < 9) {
+  if (channel < NChPerMod) {
     timeDiff += parameters.TimeDelayFDC;
   } else {
     timeDiff += parameters.TimeDelayFDA;
   }
   float charge;
   // LOG(info) <<"Ch = "<<channel<<" NphE = " << nPhE <<" timeDiff "<<timeDiff;
-  if (channel < 9) {
+  if (channel < NChPerMod) {
     charge = TMath::Qe() * FDDDigParam::Instance().pmGainC * mBinSize / (mPmtTimeIntegral * ChargePerADC);
   } else {
     charge = TMath::Qe() * FDDDigParam::Instance().pmGainA * mBinSize / (mPmtTimeIntegral * ChargePerADC);
@@ -133,8 +133,13 @@ if (sigmaGain > 0.f && nPhE > 0) {
   }
 
   constexpr float BinSizeInv = 1.0 / mBinSize;
+  const float maxPhotoelectronDelay = FDDDigParam::Instance().MaxPhotoelectronDelay;
   for (int iPhE = 0; iPhE < nPhE; ++iPhE) {
-    float tPhE = timeDiff + mRndSignalShape.getNextValue();
+    const float delay = mRndSignalShape.getNextValue();
+    if (delay > maxPhotoelectronDelay) {
+      continue;
+    }
+    const float tPhE = timeDiff + delay;
     int const firstBin = roundVc(TMath::Max((int)0, (int)((tPhE - PMTransitTime) * BinSizeInv)));
     int const lastBin = TMath::Min((int)NBC2Cache * NTimeBinsPerBCDigitizer - 1, (int)((tPhE + 2.0 * PMTransitTime) * BinSizeInv));
     // LOG(info) << "firstBin = "<<firstBin<<" lastbin "<<lastBin;
@@ -154,7 +159,8 @@ if (sigmaGain > 0.f && nPhE > 0) {
     float const* qEnd = &mPMResponseTables[parameters.NResponseTables / 2 + iOffset].back();
 
     for (int ir = firstBin / NTimeBinsPerBCDigitizer; ir <= lastBin / NTimeBinsPerBCDigitizer; ir++) {
-      int localFirst = (ir == firstBin / NTimeBinsPerBCDigitizer) ? firstBin : 0;
+      // firstBin is relative to the full cache; pulse contains only one BC.
+      int localFirst = (ir == firstBin / NTimeBinsPerBCDigitizer) ? firstBin % NTimeBinsPerBCDigitizer : 0;
       int localLast = (ir < lastBin / NTimeBinsPerBCDigitizer) ? NTimeBinsPerBCDigitizer : (lastBin - ir * NTimeBinsPerBCDigitizer);
       auto bcCache = getBCCache(cachedIR[ir]);
       auto& analogSignal = (*bcCache).pulse[channel];
@@ -167,10 +173,10 @@ if (sigmaGain > 0.f && nPhE > 0) {
         workVc.load(p);
         workVc += mRndGainVar.getNextValueVc<Vc::float_v>() * charge * pmtVc;
         workVc.store(p);
+        added[ir] = kTRUE;
         p += Vc::float_v::Size;
         Vc::prefetchForOneRead(p);
       }
-      added[ir] = kTRUE;
     }
   }
   for (int ir = 0; ir < nCachedIR; ir++) {
@@ -220,7 +226,6 @@ void Digitizer::storeBC(const BCCache& bc,
   int first = digitsCh.size(), nStored = 0;
   float totalChargeA = 0, totalChargeC = 0;
   int n_hit_A = 0, n_hit_C = 0, total_time_A = 0, total_time_C = 0;
-  constexpr int nChCside = 8;
   // FDD logical channel pairs, as used by the software trigger in PR #16042.
   constexpr int coincidencePairs[Nchannels] = {4, 5, 6, 7, 0, 1, 2, 3, 12, 13, 14, 15, 8, 9, 10, 11};
   bool triggerChannel[Nchannels] = {};
@@ -236,7 +241,7 @@ void Digitizer::storeBC(const BCCache& bc,
                                : 0.f;
       cfdTime += std::lround(param.TimeOffsetCFD + jitterNS * invTimePerTDC);
 
-      if (ic < nChCside) {
+      if (ic < NChPerMod) {
         totalChargeC += chargeADC;
         total_time_C += cfdTime;
         n_hit_C++;
@@ -262,8 +267,8 @@ void Digitizer::storeBC(const BCCache& bc,
       const auto& channel = digitsCh.back();
       constexpr uint8_t triggerFlagMask = static_cast<uint8_t>(~((1u << ChannelData::kNumberADC) | (1u << ChannelData::kIsEventInTVDC)));
       constexpr uint8_t triggerFlags = 1u << ChannelData::kIsCFDinADCgate;
-      const int low = ic < nChCside ? param.OrTriggerAmplitudeLowThresholdSideC : param.OrTriggerAmplitudeLowThresholdSideA;
-      const int high = ic < nChCside ? param.OrTriggerAmplitudeHighThresholdSideC : param.OrTriggerAmplitudeHighThresholdSideA;
+      const int low = ic < NChPerMod ? param.OrTriggerAmplitudeLowThresholdSideC : param.OrTriggerAmplitudeLowThresholdSideA;
+      const int high = ic < NChPerMod ? param.OrTriggerAmplitudeHighThresholdSideC : param.OrTriggerAmplitudeHighThresholdSideA;
       triggerChannel[ic] = (channel.mFEEBits & triggerFlagMask) == triggerFlags &&
                            std::abs(int(channel.mTime)) < param.OrGate &&
                            channel.mChargeADC > low && channel.mChargeADC < high;
@@ -278,7 +283,7 @@ void Digitizer::storeBC(const BCCache& bc,
       continue;
     }
     // Each accepted channel contributes once, including both members of a pair.
-    if (ic < nChCside) {
+    if (ic < NChPerMod) {
       triggerHitsC++;
       triggerTimeC += triggerTime[ic];
     } else {
@@ -342,6 +347,10 @@ float Digitizer::simulateTimeCFD(const ChannelBCDataF& pulse)
   float timeCFD = -1024.f;
 
   const int binShift = TMath::Nint(parameters.TimeShiftCFD / mBinSize);
+  // Samples are charge contributions in ADC units, not integrated channel ADC.
+  // Convert a voltage threshold assuming a 50 Ohm input, as in FV0.
+  const float thresholdMV = FDDDigParam::Instance().CFDThreshold;
+  const float thresholdADC = thresholdMV * 1.e-3f / 50.f * (mBinSize * 1.e-9f) / ChargePerADC;
 
   // Calculate CFD signal
   for (int iBin = 0; iBin < NTimeBinsPerBCDigitizer; ++iBin) {
@@ -360,7 +369,8 @@ float Digitizer::simulateTimeCFD(const ChannelBCDataF& pulse)
       continue;
     }
 
-    if (mTimeCFD[iBin - 1] < 0.f &&
+    if ((thresholdMV <= 0.f || std::abs(pulse[iBin]) > thresholdADC) &&
+        mTimeCFD[iBin - 1] < 0.f &&
         mTimeCFD[iBin] >= 0.f) {
       timeCFD = mBinSize * float(iBin);
       break;

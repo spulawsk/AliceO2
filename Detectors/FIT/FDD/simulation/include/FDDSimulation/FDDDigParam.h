@@ -25,22 +25,24 @@ struct FDDDigParam : o2::conf::ConfigurableParamHelper<FDDDigParam> {
   float hitTimeOffsetA = 0; ///< Hit time offset on the A side [ns]
   float hitTimeOffsetC = 0; ///< Hit time offset on the C side [ns]
 
-  float pmGainA = 1e6; ///< PM gain
-  float pmGainC = 1e6; ///< PM gain
-  float GainSmearingSigma = 0.f; // Log-normal PMT gain smearing per hit
-  float TimeOffsetCFD = 0.f; // CFD time offset in TDC units
-  float TimeSmearingSigma = 0.f;   // ns
+  float pmGainA = 5.914e7f; ///< PM gain
+  float pmGainC = 5.914e7f; ///< PM gain
+  float GainSmearingSigma = 0.35f; // Log-normal PMT gain smearing per hit
+  float MaxPhotoelectronDelay = 20.f; // ns; discard photoelectrons sampled above this delay
+  float TimeOffsetCFD = -170.f; // CFD time offset in TDC units
+  float TimeSmearingSigma = 1.f; // ns
+  float CFDThreshold = 3.f; // mV, assuming a 50 Ohm input; <= 0 disables the amplitude cut
 
   int CFDInADCGate = 192; // Half-width in TDC counts; abs(time) must be strictly smaller
 
-  // Trigger thresholds in ADC counts and TDC counts, matching the software
-  // trigger defaults in AliceO2 PR #16042. All window boundaries are strict.
-  int OrGate = 153;
+  // All window boundaries are strict.
+  int OrGate = 255; // TDC counts, Run 3 hardware setting
   int OrTriggerAmplitudeLowThresholdSideA = 6;
   int OrTriggerAmplitudeLowThresholdSideC = 0;
-  int OrTriggerAmplitudeHighThresholdSideA = 4095;
-  int OrTriggerAmplitudeHighThresholdSideC = 4095;
-  int VtxTriggerTimeWindow = 100;
+  // Exclusive upper bound that includes the saturated ADC bin (4095).
+  int OrTriggerAmplitudeHighThresholdSideA = 4096;
+  int OrTriggerAmplitudeHighThresholdSideC = 4096;
+  int VtxTriggerTimeWindow = 100; // TDC counts, software trigger in PR #16042
   bool TriggerCoincidenceMode = true;
 
   O2ParamDef(FDDDigParam, "FDDDigParam");
