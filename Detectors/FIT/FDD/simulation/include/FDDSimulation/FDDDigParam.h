@@ -28,15 +28,15 @@ struct FDDDigParam : o2::conf::ConfigurableParamHelper<FDDDigParam> {
   float pmGainA = 5.914e7f; ///< PM gain
   float pmGainC = 5.914e7f; ///< PM gain
   float GainSmearingSigma = 0.35f; // Log-normal PMT gain smearing per hit
-  float MaxPhotoelectronDelay = 20.f; // ns; discard photoelectrons sampled above this delay
+  float MaxPhotoelectronDelay = 100.f; // ns; discard photoelectrons sampled above this delay
   float TimeOffsetCFD = -170.f; // CFD time offset in TDC units
-  float TimeSmearingSigma = 1.f; // ns
-  float CFDThreshold = 3.f; // mV, assuming a 50 Ohm input; <= 0 disables the amplitude cut
+  float TimeSmearingSigma = 0.5f; // ns
+  float CFDThreshold = 0.f; // mV, assuming a 50 Ohm input; <= 0 disables the amplitude cut
 
   int CFDInADCGate = 192; // Half-width in TDC counts; abs(time) must be strictly smaller
 
   // All window boundaries are strict.
-  int OrGate = 255; // TDC counts, Run 3 hardware setting
+  int OrGate = 100; // TDC counts
   int OrTriggerAmplitudeLowThresholdSideA = 6;
   int OrTriggerAmplitudeLowThresholdSideC = 0;
   // Exclusive upper bound that includes the saturated ADC bin (4095).

@@ -103,13 +103,11 @@ void Digitizer::createPulse(int nPhE, int parID, double timeHit, std::array<o2::
     return (i / Vc::float_v::Size) * Vc::float_v::Size;
   };
 
-  double time0 = cachedIR[0].bc2ns(); // start time of the 1st cashed BC
-  float timeDiff = time0 - timeHit;
-  if (channel < NChPerMod) {
-    timeDiff += parameters.TimeDelayFDC;
-  } else {
-    timeDiff += parameters.TimeDelayFDA;
-  }
+  const double time0 = cachedIR[0].bc2ns();
+  const float sideDelay = channel < NChPerMod ? parameters.TimeDelayFDC : parameters.TimeDelayFDA;
+  // The nominal delays include one BC of cache lead-in. Use the remaining
+  // delay relative to the hit so the prompt pulse keeps its phase in the hit BC.
+  const float timeDiff = timeHit - time0 + sideDelay - o2::constants::lhc::LHCBunchSpacingNS;
   float charge;
   // LOG(info) <<"Ch = "<<channel<<" NphE = " << nPhE <<" timeDiff "<<timeDiff;
   if (channel < NChPerMod) {
