@@ -98,6 +98,7 @@ class Digitizer
 
   BCCache& setBCCache(const o2::InteractionRecord& ir);
   BCCache* getBCCache(const o2::InteractionRecord& ir);
+  int findCFDCrossing(const ChannelBCDataF& pulse, int firstBin);
 
   void storeBC(const BCCache& bc,
                std::vector<o2::fdd::Digit>& digitsBC, std::vector<o2::fdd::ChannelData>& digitsCh, std::vector<o2::fdd::DetTrigInput>& digitsTrig,
@@ -109,6 +110,7 @@ class Digitizer
   int mSrcID;                           // signal, background or QED
   std::deque<BCCache> mCache;           // cached BCs data
   o2::fdd::Triggers mTriggers;
+  std::array<int64_t, Nchannels> mNextCFDBin{}; //! First live sample of each channel on the absolute BC timeline
 
   DigitizationParameters parameters;
 

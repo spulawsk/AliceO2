@@ -31,14 +31,15 @@ struct FDDDigParam : o2::conf::ConfigurableParamHelper<FDDDigParam> {
   float MaxPhotoelectronDelay = 100.f; // ns; discard photoelectrons sampled above this delay
   float TimeOffsetCFD = -170.f; // CFD time offset in TDC units
   float TimeSmearingSigma = 0.5f; // ns
-  float CFDThreshold = 0.f; // mV, assuming a 50 Ohm input; <= 0 disables the amplitude cut
+  float CFDDeadTime = 15.6f; // ns; <= 0 disables the per-channel dead time
+  float CFDThreshold = 3.f; // mV, assuming a 50 Ohm input; <= 0 disables the amplitude cut
 
   int CFDInADCGate = 192; // Half-width in TDC counts; abs(time) must be strictly smaller
 
   // All window boundaries are strict.
   int OrGate = 100; // TDC counts
   int OrTriggerAmplitudeLowThresholdSideA = 6;
-  int OrTriggerAmplitudeLowThresholdSideC = 0;
+  int OrTriggerAmplitudeLowThresholdSideC = 6;
   // Exclusive upper bound that includes the saturated ADC bin (4095).
   int OrTriggerAmplitudeHighThresholdSideA = 4096;
   int OrTriggerAmplitudeHighThresholdSideC = 4096;

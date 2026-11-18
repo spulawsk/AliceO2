@@ -229,10 +229,21 @@ void Digitizer::storeBC(const BCCache& bc,
   bool triggerChannel[Nchannels] = {};
   int triggerTime[Nchannels] = {};
   const auto& param = FDDDigParam::Instance();
+  const int64_t bcStartBin = bc.toLong() * NTimeBinsPerBCDigitizer;
+  const int64_t deadBins = param.CFDDeadTime > 0.f ? std::llround(param.CFDDeadTime / mBinSize) : 0;
   for (int ic = 0; ic < Nchannels; ic++) {
     float chargeADC = integrateCharge(bc.pulse[ic]);
-    int cfdTime = int(simulateTimeCFD(bc.pulse[ic]));
-
+    const int firstLiveBin = std::clamp<int64_t>(mNextCFDBin[ic] - bcStartBin, 0, NTimeBinsPerBCDigitizer);
+    const int crossing = findCFDCrossing(bc.pulse[ic], firstLiveBin);
+    int cfdTime = -1024;
+    if (crossing >= 0) {
+      cfdTime = std::lround(mBinSize * float(crossing) * invTimePerTDC);
+      if (deadBins > 0) {
+        mNextCFDBin[ic] = bcStartBin + crossing + deadBins;
+      }
+    }
+    const int low = ic < NChPerMod ? param.OrTriggerAmplitudeLowThresholdSideC : param.OrTriggerAmplitudeLowThresholdSideA;
+    const int high = ic < NChPerMod ? param.OrTriggerAmplitudeHighThresholdSideC : param.OrTriggerAmplitudeHighThresholdSideA;
     if (chargeADC != 0 && cfdTime != -1024) {
       const float jitterNS = param.TimeSmearingSigma > 0.f
                                ? gRandom->Gaus(0., param.TimeSmearingSigma)
@@ -265,8 +276,6 @@ void Digitizer::storeBC(const BCCache& bc,
       const auto& channel = digitsCh.back();
       constexpr uint8_t triggerFlagMask = static_cast<uint8_t>(~((1u << ChannelData::kNumberADC) | (1u << ChannelData::kIsEventInTVDC)));
       constexpr uint8_t triggerFlags = 1u << ChannelData::kIsCFDinADCgate;
-      const int low = ic < NChPerMod ? param.OrTriggerAmplitudeLowThresholdSideC : param.OrTriggerAmplitudeLowThresholdSideA;
-      const int high = ic < NChPerMod ? param.OrTriggerAmplitudeHighThresholdSideC : param.OrTriggerAmplitudeHighThresholdSideA;
       triggerChannel[ic] = (channel.mFEEBits & triggerFlagMask) == triggerFlags &&
                            std::abs(int(channel.mTime)) < param.OrGate &&
                            channel.mChargeADC > low && channel.mChargeADC < high;
@@ -340,9 +349,15 @@ float Digitizer::integrateCharge(const ChannelBCDataF& pulse)
 //_____________________________________________________________________________
 float Digitizer::simulateTimeCFD(const ChannelBCDataF& pulse)
 {
-  std::fill(mTimeCFD.begin(), mTimeCFD.end(), 0.f);
+  const int crossing = findCFDCrossing(pulse, 0);
+  return crossing >= 0 ? std::lround(mBinSize * float(crossing) * invTimePerTDC) : -1024.f;
+}
 
-  float timeCFD = -1024.f;
+int Digitizer::findCFDCrossing(const ChannelBCDataF& pulse, int firstBin)
+{
+  if (firstBin >= NTimeBinsPerBCDigitizer) {
+    return -1;
+  }
 
   const int binShift = TMath::Nint(parameters.TimeShiftCFD / mBinSize);
   // Samples are charge contributions in ADC units, not integrated channel ADC.
@@ -360,7 +375,7 @@ float Digitizer::simulateTimeCFD(const ChannelBCDataF& pulse)
   }
 
   // Find the first valid zero crossing
-  for (int iBin = 1; iBin < NTimeBinsPerBCDigitizer; ++iBin) {
+  for (int iBin = std::max(firstBin, 1); iBin < NTimeBinsPerBCDigitizer; ++iBin) {
 
     // Ignore artificial crossing at the CFD delay boundary
     if (iBin == binShift) {
@@ -370,18 +385,11 @@ float Digitizer::simulateTimeCFD(const ChannelBCDataF& pulse)
     if ((thresholdMV <= 0.f || std::abs(pulse[iBin]) > thresholdADC) &&
         mTimeCFD[iBin - 1] < 0.f &&
         mTimeCFD[iBin] >= 0.f) {
-      timeCFD = mBinSize * float(iBin);
-      break;
+      return iBin;
     }
   }
 
-  // No valid CFD crossing found
-  if (timeCFD < 0.f) {
-    return -1024.f;
-  }
-
-  // Convert ns to TDC counts
-  return std::lround(timeCFD * invTimePerTDC);
+  return -1;
 }
 //_____________________________________________________________________________
 o2::fdd::Digitizer::BCCache& Digitizer::setBCCache(const o2::InteractionRecord& ir)
@@ -430,6 +438,7 @@ void Digitizer::setTriggers(o2::fdd::Digit* digit)
 //_______________________________________________________________________
 void Digitizer::init()
 {
+  mNextCFDBin.fill(0);
   auto const roundVc = [&](int i) -> int {
     return (i / Vc::float_v::Size) * Vc::float_v::Size;
   };
