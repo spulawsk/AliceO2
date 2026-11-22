@@ -24,11 +24,14 @@ namespace o2::fdd
 struct FDDDigParam : o2::conf::ConfigurableParamHelper<FDDDigParam> {
   float hitTimeOffsetA = 0; ///< Hit time offset on the A side [ns]
   float hitTimeOffsetC = 0; ///< Hit time offset on the C side [ns]
+  float HitEnergyThreshold = 3.f; ///< Minimum deposited energy per hit [MeV]; <= 0 disables the cut
 
   float pmGainA = 5.914e7f; ///< PM gain
   float pmGainC = 5.914e7f; ///< PM gain
   float GainSmearingSigma = 0.35f; // Log-normal PMT gain smearing per hit
-  float MaxPhotoelectronDelay = 100.f; // ns; discard photoelectrons sampled above this delay
+  bool RandomizePhotoelectronDelay = true; // Enable the legacy photoelectron time distribution
+  float PhotoelectronDelay = 3.25f; // ns; fixed delay when randomization is disabled
+  float MaxPhotoelectronDelay = 100.f; // ns; cutoff applied only to randomized delays
   float TimeOffsetCFD = -170.f; // CFD time offset in TDC units
   float TimeSmearingSigma = 0.5f; // ns
   float CFDDeadTime = 15.6f; // ns; <= 0 disables the per-channel dead time

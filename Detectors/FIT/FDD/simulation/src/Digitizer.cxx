@@ -51,6 +51,11 @@ void Digitizer::process(const std::vector<o2::fdd::Hit>& hits,
   // LOG(info) << "Pulse";
   // Conversion of hits to the analogue pulse shape
   for (auto& hit : sorted_hits) {
+    // MC hit energy is stored in GeV; apply the threshold to each hit before light conversion.
+    const float hitEnergyThreshold = FDDDigParam::Instance().HitEnergyThreshold;
+    if (hitEnergyThreshold > 0.f && hit.GetEnergyLoss() < hitEnergyThreshold * 1.e-3f) {
+      continue;
+    }
     int iChannel = hit.GetDetectorID();
 
     // If the dead channel map is used, and the channel with ID 'hit_ch' is dead, don't process this hit.
@@ -131,10 +136,10 @@ if (sigmaGain > 0.f && nPhE > 0) {
   }
 
   constexpr float BinSizeInv = 1.0 / mBinSize;
-  const float maxPhotoelectronDelay = FDDDigParam::Instance().MaxPhotoelectronDelay;
+  const auto& param = FDDDigParam::Instance();
   for (int iPhE = 0; iPhE < nPhE; ++iPhE) {
-    const float delay = mRndSignalShape.getNextValue();
-    if (delay > maxPhotoelectronDelay) {
+    const float delay = param.RandomizePhotoelectronDelay ? mRndSignalShape.getNextValue() : param.PhotoelectronDelay;
+    if (param.RandomizePhotoelectronDelay && delay > param.MaxPhotoelectronDelay) {
       continue;
     }
     const float tPhE = timeDiff + delay;
@@ -472,11 +477,13 @@ void Digitizer::init()
     return singlePhESpectrumFn.GetRandom(0, 30) / meansPhE;
   });
 
-  TF1 signalShapeFn("signalShape", "crystalball", 0, 300);
-  signalShapeFn.SetParameters(1, parameters.ShapeSigma, parameters.ShapeSigma, parameters.ShapeAlpha, parameters.ShapeN);
-  mRndSignalShape.initialize([&]() -> float {
-    return signalShapeFn.GetRandom(0, 200);
-  });
+  if (FDDDigParam::Instance().RandomizePhotoelectronDelay) {
+    TF1 signalShapeFn("signalShape", "crystalball", 0, 300);
+    signalShapeFn.SetParameters(1, parameters.ShapeSigma, parameters.ShapeSigma, parameters.ShapeAlpha, parameters.ShapeN);
+    mRndSignalShape.initialize([&]() -> float {
+      return signalShapeFn.GetRandom(0, 200);
+    });
+  }
 }
 //_______________________________________________________________________
 void Digitizer::finish() {}
